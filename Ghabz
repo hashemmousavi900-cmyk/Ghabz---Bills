@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پورتال مدیریت قبض‌های پرداختی</title>
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <!-- Vazir Font -->
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/font-face.css" rel="stylesheet">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Vazir', 'Segoe UI', Tahoma, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #a5d6a7 0%, #4db6ac 100%);
+            min-height: 100vh;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            z-index: 0;
+        }
+        body::before {
+            width: 350px;
+            height: 350px;
+            background: #26c6da;
+            top: -100px;
+            right: -100px;
+            animation: floatOrb 25s infinite alternate ease-in-out;
+        }
+        body::after {
+            width: 400px;
+            height: 400px;
+            background: #43a047;
+            bottom: -120px;
+            left: -120px;
+            animation: floatOrb 30s infinite alternate-reverse ease-in-out;
+        }
+
+        @keyframes floatOrb {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(60px, 60px) scale(1.3); }
+        }
+
+        .portal-container {
+            max-width: 1200px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(20px);
+            border-radius: 32px;
+            padding: 25px 28px;
+            box-shadow: 0 20px 60px rgba(0, 80, 60, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            position: relative;
+            z-index: 1;
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .loading-overlay.active { display: flex; }
+        .loading-spinner {
+            background: white;
+            padding: 30px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .loading-spinner i {
+            font-size: 2.5rem;
+            color: #00897b;
+            animation: spin 1s linear infinite;
+        }
+        .loading-spinner p {
+            margin-top: 12px;
+            color: #004d40;
+            font-weight: 600;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        h1 {
+            text-align: center;
+            color: #1b5e20;
+            font-weight: 700;
+            margin-bottom: 25px;
+            font-size: 1.6rem;
+            letter-spacing: 0.5px;
+        }
+        h1 i {
+            color: #00695c;
+            margin-left: 10px;
+            background: rgba(0, 137, 123, 0.12);
+            padding: 6px 12px;
+            border-radius: 14px;
+            font-size: 1.3rem;
+        }
+
+        .location-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+
+        .location-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50px;
+            padding: 3px 3px 3px 14px;
+            border: 1.5px solid rgba(0, 137, 123, 0.2);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .location-item:hover {
+            box-shadow: 0 6px 20px rgba(0, 137, 123, 0.18);
+            transform: translateY(-2px);
+            border-color: #00897b;
+        }
+
+        .location-btn {
+            padding: 7px 16px;
+            border: none;
+            border-radius: 50px;
+            background: transparent;
+            color: #1b5e20;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .location-btn i {
+            font-size: 0.95rem;
+            color: #00897b;
+        }
+        .location-btn:hover {
+            background: rgba(0, 137, 123, 0.08);
+        }
+        .location-btn.active {
+            background: linear-gradient(135deg, #00695c, #004d40);
+            color: #fff;
+            box-shadow: 0 6px 18px rgba(0, 137, 123, 0.3);
+        }
+        .location-btn.active i {
+            color: #fff;
+        }
+
+        .edit-location-btn {
+            background: rgba(0, 137, 123, 0.1);
+            border: none;
+            color: #004d40;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+        .edit-location-btn:hover {
+            background: rgba(0, 137, 123, 0.25);
+            transform: scale(1.1) rotate(8deg);
+        }
+
+        .form-section {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 22px 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(0, 137, 123, 0.1);
+            box-shadow: 0 6px 25px rgba(0, 80, 60, 0.06);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 14px;
+            align-items: end;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #004d40;
+            font-size: 0.78rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .form-group label i {
+            color: #00897b;
+            width: 18px;
+            font-size: 0.85rem;
+        }
+
+        .form-control {
+            padding: 8px 14px;
+            border: 1.5px solid rgba(0, 137, 123, 0.2);
+            border-radius: 12px;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.85);
+            color: #1b5e20;
+            width: 100%;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: #00897b;
+            background: #fff;
+            box-shadow: 0 0 0 4px rgba(0, 137, 123, 0.08);
+        }
+        .form-control::placeholder {
+            color: rgba(27, 94, 32, 0.3);
+            font-size: 0.8rem;
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, #00695c, #004d40);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            box-shadow: 0 6px 20px rgba(0, 137, 123, 0.25);
+            width: 100%;
+        }
+        .btn-submit:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 137, 123, 0.35);
+        }
+        .btn-submit i {
+            font-size: 1rem;
+        }
+
+        .table-section {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 20px;
+            border: 1px solid rgba(0, 137, 123, 0.08);
+            box-shadow: 0 6px 25px rgba(0, 80, 60, 0.05);
+            overflow-x: auto;
+        }
+
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .table-header h3 {
+            color: #004d40;
+            font-weight: 700;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .table-header h3 i {
+            color: #00897b;
+            background: rgba(0, 137, 123, 0.1);
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .report-btn, .export-btn {
+            border: none;
+            padding: 7px 18px;
+            border-radius: 50px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+        }
+        .report-btn {
+            background: linear-gradient(135deg, #d84315, #bf360c);
+            color: #fff;
+            box-shadow: 0 6px 18px rgba(191, 54, 12, 0.25);
+        }
+        .report-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 28px rgba(191, 54, 12, 0.35);
+        }
+        .export-btn {
+            background: linear-gradient(135deg, #2e7d32, #1b5e20);
+            color: #fff;
+            box-shadow: 0 6px 18px rgba(27, 94, 32, 0.25);
+        }
+        .export-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 28px rgba(27, 94, 32, 0.35);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 700px;
+            font-size: 0.85rem;
+        }
+
+        th {
+            padding: 10px 12px;
+            text-align: right;
+            font-weight: 700;
+            color: #004d40;
+            border-bottom: 2px solid rgba(0, 137, 123, 0.15);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(0, 137, 123, 0.06);
+            color: #1b5e20;
+            font-size: 0.85rem;
+            vertical-align: middle;
+        }
+
+        tr:hover td {
+            background: rgba(0, 137, 123, 0.04);
+        }
+
+        .badge {
+            padding: 3px 12px;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            display: inline-block;
+        }
+        .badge-water { background: rgba(0, 188, 212, 0.2); color: #00695c; }
+        .badge-gas { background: rgba(255, 152, 0, 0.2); color: #bf360c; }
+        .badge-electric { background: rgba(255, 193, 7, 0.25); color: #f57f17; }
+        .badge-phone { background: rgba(76, 175, 80, 0.2); color: #1b5e20; }
+        .badge-fine { background: rgba(244, 67, 54, 0.2); color: #b71c1c; }
+        .badge-toll { background: rgba(156, 39, 176, 0.2); color: #4a148c; }
+        .badge-building { background: rgba(0, 137, 123, 0.2); color: #004d40; }
+        .badge-other { background: rgba(158, 158, 158, 0.2); color: #424242; }
+
+        .action-btns {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .action-btn {
+            border: none;
+            padding: 4px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+        }
+        .edit-btn {
+            background: rgba(0, 137, 123, 0.1);
+            color: #00695c;
+            border: 1px solid rgba(0, 137, 123, 0.12);
+        }
+        .edit-btn:hover {
+            background: rgba(0, 137, 123, 0.2);
+            transform: scale(1.05);
+        }
+        .delete-btn {
+            background: rgba(244, 67, 54, 0.1);
+            color: #c62828;
+            border: 1px solid rgba(244, 67, 54, 0.12);
+        }
+        .delete-btn:hover {
+            background: rgba(244, 67, 54, 0.2);
+            transform: scale(1.05);
+        }
+
+        .empty-message {
+            text-align: center;
+            padding: 35px 20px;
+            color: rgba(27, 94, 32, 0.3);
+            font-size: 0.95rem;
+        }
+        .empty-message i {
+            font-size: 2.8rem;
+            display: block;
+            margin-bottom: 12px;
+            color: rgba(0, 137, 123, 0.15);
+        }
+
+        /* Modals */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.25);
+            backdrop-filter: blur(6px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+
+        .modal-box {
+            background: #fff;
+            border-radius: 24px;
+            padding: 28px;
+            max-width: 450px;
+            width: 92%;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.15);
+            animation: modalSlide 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        @keyframes modalSlide {
+            from { transform: scale(0.9) translateY(20px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .modal-box h3 {
+            color: #004d40;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.1rem;
+        }
+        .modal-box h3 i { color: #00897b; }
+
+        .modal-box input, .modal-box select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid rgba(0, 137, 123, 0.2);
+            border-radius: 12px;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            font-family: 'Vazir', sans-serif;
+            background: #f5faf7;
+        }
+        .modal-box input:focus, .modal-box select:focus {
+            outline: none;
+            border-color: #00897b;
+            box-shadow: 0 0 0 4px rgba(0, 137, 123, 0.08);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 4px;
+        }
+        .modal-actions button {
+            padding: 8px 22px;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Vazir', sans-serif;
+            font-size: 0.85rem;
+        }
+        .modal-actions .btn-confirm {
+            background: linear-gradient(135deg, #00695c, #004d40);
+            color: #fff;
+        }
+        .modal-actions .btn-confirm:hover { transform: scale(1.04); }
+        .modal-actions .btn-cancel {
+            background: #e0e0e0;
+            color: #424242;
+        }
+        .modal-actions .btn-cancel:hover { background: #bdbdbd; }
+
+        /* Report Modal */
+        .report-modal-box { max-width: 500px; }
+        .report-content { padding: 8px 0; }
+        .report-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 137, 123, 0.08);
+            font-size: 0.9rem;
+        }
+        .report-item:last-child { border-bottom: none; }
+        .report-total {
+            font-weight: 700;
+            color: #004d40;
+            font-size: 1rem;
+            padding: 10px 0;
+            border-top: 2px solid rgba(0, 137, 123, 0.15);
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .report-header-icon {
+            font-size: 2rem;
+            color: #00897b;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .portal-container { padding: 15px; }
+            .form-grid { grid-template-columns: 1fr; }
+            .location-btn { padding: 6px 12px; font-size: 0.8rem; }
+            .location-item { padding: 2px 2px 2px 10px; }
+            h1 { font-size: 1.3rem; }
+            .table-header h3 { font-size: 0.95rem; }
+            .form-section { padding: 16px; }
+            .table-section { padding: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner">
+        <i class="fas fa-spinner"></i>
+        <p>در حال بارگذاری...</p>
+    </div>
+</div>
+
+<div class="portal-container">
+    <h1><i class="fas fa-file-invoice"></i> پورتال مدیریت قبض‌ها</h1>
+
+    <!-- Location Tabs -->
+    <div class="location-tabs" id="locationTabs"></div>
+
+    <!-- Form -->
+    <div class="form-section">
+        <form id="billForm">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label><i class="fas fa-tag"></i> نوع قبض</label>
+                    <select class="form-control" id="billType" required>
+                        <option value="برق">برق</option>
+                        <option value="آب">آب</option>
+                        <option value="گاز">گاز</option>
+                        <option value="تلفن">تلفن</option>
+                        <option value="جریمه">جریمه</option>
+                        <option value="عوارض اتوبان">عوارض اتوبان</option>
+                        <option value="شارژ ساختمان">شارژ ساختمان</option>
+                        <option value="سایر">سایر</option>
+                    </select>
+                </div>
+                <div class="form-group" id="otherDescGroup" style="display: none;">
+                    <label><i class="fas fa-pen"></i> توضیحات (سایر)</label>
+                    <input type="text" class="form-control" id="otherDesc" placeholder="مثلاً: تعمیرات ...">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-calendar-alt"></i> تاریخ پرداخت</label>
+                    <input type="date" class="form-control" id="payDate" required>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-money-bill-wave"></i> مبلغ (تومان)</label>
+                    <input type="text" class="form-control" id="amount" placeholder="مبلغ به تومان" required>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-credit-card"></i> روش پرداخت</label>
+                    <input type="text" class="form-control" id="payMethod" placeholder="مثلاً کارت به کارت، نقدی" required>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-comment"></i> توضیحات</label>
+                    <input type="text" class="form-control" id="description" placeholder="توضیحات اختیاری">
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn-submit"><i class="fas fa-save"></i> ثبت قبض</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Table -->
+    <div class="table-section">
+        <div class="table-header">
+            <h3><i class="fas fa-list-ul"></i> <span id="locationTitle">خانه ۱</span></h3>
+            <div class="header-actions">
+                <button class="export-btn" id="exportBtn"><i class="fas fa-file-excel"></i> اکسل</button>
+                <button class="report-btn" id="reportBtn"><i class="fas fa-chart-simple"></i> گزارش</button>
+            </div>
+        </div>
+        <div id="tableWrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>نوع قبض</th>
+                        <th>تاریخ (شمسی)</th>
+                        <th>مبلغ (تومان)</th>
+                        <th>روش پرداخت</th>
+                        <th>توضیحات</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody id="billsTableBody"></tbody>
+            </table>
+            <div id="emptyState" class="empty-message">
+                <i class="fas fa-file-invoice"></i>
+                <p>هنوز قبضی ثبت نشده است</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="editModal">
+    <div class="modal-box">
+        <h3><i class="fas fa-pen-to-square"></i> ویرایش قبض</h3>
+        <input type="hidden" id="editId">
+        <select class="form-control" id="editBillType" style="margin-bottom:12px;">
+            <option value="برق">برق</option>
+            <option value="آب">آب</option>
+            <option value="گاز">گاز</option>
+            <option value="تلفن">تلفن</option>
+            <option value="جریمه">جریمه</option>
+            <option value="عوارض اتوبان">عوارض اتوبان</option>
+            <option value="شارژ ساختمان">شارژ ساختمان</option>
+            <option value="سایر">سایر</option>
+        </select>
+        <input type="date" id="editPayDate" placeholder="تاریخ">
+        <input type="text" id="editAmount" placeholder="مبلغ">
+        <input type="text" id="editPayMethod" placeholder="روش پرداخت">
+        <input type="text" id="editDescription" placeholder="توضیحات">
+        <div class="modal-actions">
+            <button class="btn-cancel" id="editCancelBtn">انصراف</button>
+            <button class="btn-confirm" id="editConfirmBtn">ذخیره</button>
+        </div>
+    </div>
+</div>
+
+<!-- Location Edit Modal -->
+<div class="modal-overlay" id="locationEditModal">
+    <div class="modal-box">
+        <h3><i class="fas fa-pen-to-square"></i> ویرایش نام مکان</h3>
+        <input type="text" id="editLocationInput" placeholder="نام جدید را وارد کنید...">
+        <div class="modal-actions">
+            <button class="btn-cancel" id="locationEditCancelBtn">انصراف</button>
+            <button class="btn-confirm" id="locationEditConfirmBtn">ذخیره</button>
+        </div>
+    </div>
+</div>
+
+<!-- Report Modal -->
+<div class="modal-overlay" id="reportModal">
+    <div class="modal-box report-modal-box">
+        <h3><i class="fas fa-chart-pie" style="color: #00897b;"></i> گزارش کامل قبض‌ها</h3>
+        <div class="report-content" id="reportContent"></div>
+        <div class="modal-actions">
+            <button class="btn-cancel" id="reportCloseBtn">بستن</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ============================================================
+        // 🔐 تنظیمات Supabase
+        // ============================================================
+        const SUPABASE_URL = "https://buowqguzsrychwoxyqby.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1b3dxZ3V6c3J5Y2h3b3h5cWJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI3MTQ1MzIsImV4cCI6MjA3ODI5MDUzMn0._2j0iRUY4L8x_59tDMEBh8qjSTHZdUOPd0nFqPZkXAk";
+        const TABLE_NAME = 'Ghabz-Bills';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ----- State -----
+        let bills = [];
+        let currentLocation = 'خانه ۱';
+        let locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+        let editingLocation = null;
+        let editingBillId = null;
+
+        // ----- Helpers -----
+        function toPersianDate(gregorianDate) {
+            if (!gregorianDate) return '—';
+            try {
+                const parts = gregorianDate.split('-');
+                if (parts.length !== 3) return gregorianDate;
+                const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                return new Intl.DateTimeFormat('fa-IR', {
+                    year: 'numeric', month: '2-digit', day: '2-digit'
+                }).format(date);
+            } catch(e) { return gregorianDate; }
+        }
+
+        function toEnglishNumber(str) {
+            if (!str) return '';
+            const persianNumbers = {
+                '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+                '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
+            };
+            return str.replace(/[۰-۹]/g, function(match) {
+                return persianNumbers[match] || match;
+            });
+        }
+
+        function formatNumber(num) {
+            if (num === undefined || num === null || num === '') return '';
+            const str = String(num).replace(/,/g, '');
+            if (!str || isNaN(str)) return '';
+            return Number(str).toLocaleString('fa-IR');
+        }
+
+        function parseFormattedNumber(str) {
+            if (!str) return '';
+            const english = toEnglishNumber(str);
+            return String(english).replace(/,/g, '');
+        }
+
+        // ----- Loading -----
+        function showLoading(show) {
+            document.getElementById('loadingOverlay').classList.toggle('active', show);
+        }
+
+        // ----- CRUD Operations -----
+        async function loadBills() {
+            showLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .order('date', { ascending: false });
+
+                if (error) throw error;
+                bills = data || [];
+                
+                // Extract unique locations from data
+                const locations = new Set();
+                bills.forEach(b => locations.add(b.location));
+                if (locations.size > 0) {
+                    locationNames = Array.from(locations).sort();
+                }
+                
+                renderTable();
+                renderTabs();
+            } catch (err) {
+                console.error('Error loading bills:', err);
+                alert('خطا در بارگذاری داده‌ها: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function addBill(bill) {
+            showLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .insert([bill])
+                    .select();
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    bills.unshift(data[0]);
+                    // Update locationNames
+                    if (!locationNames.includes(data[0].location)) {
+                        locationNames.push(data[0].location);
+                        locationNames.sort();
+                    }
+                    renderTable();
+                    renderTabs();
+                }
+            } catch (err) {
+                console.error('Error adding bill:', err);
+                alert('خطا در ثبت قبض: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function updateBill(id, updates) {
+            showLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .update(updates)
+                    .eq('id', id)
+                    .select();
+
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    const index = bills.findIndex(b => b.id === id);
+                    if (index !== -1) bills[index] = data[0];
+                    
+                    // Update locationNames if needed
+                    const locations = new Set();
+                    bills.forEach(b => locations.add(b.location));
+                    locationNames = Array.from(locations).sort();
+                    if (locationNames.length === 0) locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                    
+                    renderTable();
+                    renderTabs();
+                }
+            } catch (err) {
+                console.error('Error updating bill:', err);
+                alert('خطا در ویرایش قبض: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function deleteBill(id) {
+            if (!confirm('آیا از حذف این قبض اطمینان دارید؟')) return;
+            
+            showLoading(true);
+            try {
+                const { error } = await supabase
+                    .from(TABLE_NAME)
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
+                bills = bills.filter(b => b.id !== id);
+                
+                // Update locationNames
+                const locations = new Set();
+                bills.forEach(b => locations.add(b.location));
+                locationNames = Array.from(locations).sort();
+                if (locationNames.length === 0) locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                
+                renderTable();
+                renderTabs();
+            } catch (err) {
+                console.error('Error deleting bill:', err);
+                alert('خطا در حذف قبض: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function updateLocationName(oldName, newName) {
+            showLoading(true);
+            try {
+                const { error } = await supabase
+                    .from(TABLE_NAME)
+                    .update({ location: newName })
+                    .eq('location', oldName);
+
+                if (error) throw error;
+
+                bills.forEach(b => {
+                    if (b.location === oldName) b.location = newName;
+                });
+                
+                const index = locationNames.indexOf(oldName);
+                if (index !== -1) {
+                    locationNames[index] = newName;
+                    locationNames.sort();
+                }
+                
+                if (currentLocation === oldName) currentLocation = newName;
+                
+                renderTable();
+                renderTabs();
+            } catch (err) {
+                console.error('Error updating location:', err);
+                alert('خطا در ویرایش نام مکان: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // ----- Render Tabs -----
+        function renderTabs() {
+            const container = document.getElementById('locationTabs');
+            container.innerHTML = '';
+            
+            // Ensure currentLocation exists in locationNames
+            if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
+                currentLocation = locationNames[0];
+            }
+            
+            locationNames.forEach(loc => {
+                const div = document.createElement('div');
+                div.className = 'location-item';
+                const btn = document.createElement('button');
+                btn.className = `location-btn ${loc === currentLocation ? 'active' : ''}`;
+                btn.dataset.location = loc;
+                btn.innerHTML = `<i class="fas fa-location-dot"></i> ${loc}`;
+                const editBtn = document.createElement('button');
+                editBtn.className = 'edit-location-btn';
+                editBtn.innerHTML = '<i class="fas fa-pencil"></i>';
+                editBtn.title = 'ویرایش نام';
+                editBtn.dataset.location = loc;
+                div.appendChild(btn);
+                div.appendChild(editBtn);
+                container.appendChild(div);
+            });
+
+            document.querySelectorAll('.location-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const loc = this.dataset.location;
+                    if (loc) {
+                        currentLocation = loc;
+                        renderTabs();
+                        renderTable();
+                    }
+                });
+            });
+
+            document.querySelectorAll('.edit-location-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    editingLocation = this.dataset.location;
+                    document.getElementById('editLocationInput').value = editingLocation;
+                    document.getElementById('locationEditModal').classList.add('active');
+                });
+            });
+        }
+
+        // ----- Location Edit Modal -----
+        function setupLocationEditModal() {
+            const modal = document.getElementById('locationEditModal');
+            const input = document.getElementById('editLocationInput');
+            const confirmBtn = document.getElementById('locationEditConfirmBtn');
+            const cancelBtn = document.getElementById('locationEditCancelBtn');
+
+            function closeModal() {
+                modal.classList.remove('active');
+                editingLocation = null;
+            }
+
+            cancelBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+            confirmBtn.addEventListener('click', function() {
+                const newName = input.value.trim();
+                if (!newName) { alert('لطفاً نام معتبر وارد کنید.'); return; }
+                if (newName === editingLocation) { closeModal(); return; }
+                if (locationNames.includes(newName) && newName !== editingLocation) {
+                    alert('این نام قبلاً وجود دارد.');
+                    return;
+                }
+                updateLocationName(editingLocation, newName);
+                closeModal();
+            });
+
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') confirmBtn.click();
+            });
+        }
+
+        // ----- Render Table (sorted by date DESC) -----
+        function renderTable() {
+            const tbody = document.getElementById('billsTableBody');
+            const emptyState = document.getElementById('emptyState');
+            const locationTitle = document.getElementById('locationTitle');
+            
+            locationTitle.textContent = currentLocation;
+            const locationBills = bills.filter(b => b.location === currentLocation);
+
+            if (locationBills.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            tbody.innerHTML = locationBills.map((bill, index) => {
+                let badgeClass = 'badge';
+                const typeMap = {
+                    'آب': 'badge-water', 'گاز': 'badge-gas', 'برق': 'badge-electric',
+                    'تلفن': 'badge-phone', 'جریمه': 'badge-fine',
+                    'عوارض اتوبان': 'badge-toll', 'شارژ ساختمان': 'badge-building',
+                    'سایر': 'badge-other'
+                };
+                if (typeMap[bill.type]) badgeClass += ' ' + typeMap[bill.type];
+
+                const displayDate = toPersianDate(bill.date);
+
+                return `
+                    <tr>
+                        <td><span class="${badgeClass}">${bill.type}</span></td>
+                        <td>${displayDate}</td>
+                        <td>${formatNumber(bill.amount)}</td>
+                        <td>${bill.pay_method || '—'}</td>
+                        <td>${bill.description || '—'}</td>
+                        <td>
+                            <div class="action-btns">
+                                <button class="action-btn edit-btn" data-id="${bill.id}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="action-btn delete-btn" data-id="${bill.id}">
+                                    <i class="fas fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = parseInt(this.dataset.id);
+                    deleteBill(id);
+                });
+            });
+
+            document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const id = parseInt(this.dataset.id);
+                    openEditModal(id);
+                });
+            });
+        }
+
+        // ----- Edit Modal -----
+        function openEditModal(id) {
+            const bill = bills.find(b => b.id === id);
+            if (!bill) return;
+
+            editingBillId = id;
+            document.getElementById('editId').value = id;
+            document.getElementById('editBillType').value = bill.type;
+            document.getElementById('editPayDate').value = bill.date || '';
+            document.getElementById('editAmount').value = formatNumber(bill.amount) || '';
+            document.getElementById('editPayMethod').value = bill.pay_method || '';
+            document.getElementById('editDescription').value = bill.description || '';
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function setupEditModal() {
+            const modal = document.getElementById('editModal');
+            const confirmBtn = document.getElementById('editConfirmBtn');
+            const cancelBtn = document.getElementById('editCancelBtn');
+
+            function closeModal() {
+                modal.classList.remove('active');
+                editingBillId = null;
+            }
+
+            cancelBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+            confirmBtn.addEventListener('click', function() {
+                const id = parseInt(document.getElementById('editId').value);
+                const type = document.getElementById('editBillType').value;
+                const date = document.getElementById('editPayDate').value;
+                const amountRaw = document.getElementById('editAmount').value;
+                const amount = parseFormattedNumber(amountRaw);
+                const pay_method = document.getElementById('editPayMethod').value.trim();
+                const description = document.getElementById('editDescription').value.trim();
+
+                if (!date) { alert('لطفاً تاریخ را انتخاب کنید.'); return; }
+                if (!amount || amount <= 0) { alert('مبلغ معتبر وارد کنید.'); return; }
+                if (!pay_method) { alert('روش پرداخت را وارد کنید.'); return; }
+
+                updateBill(id, {
+                    type, date, amount, pay_method, description
+                });
+                closeModal();
+            });
+
+            document.getElementById('editAmount').addEventListener('input', function() {
+                const english = toEnglishNumber(this.value);
+                let raw = english.replace(/,/g, '').replace(/[^0-9]/g, '');
+                if (raw) {
+                    this.value = Number(raw).toLocaleString('fa-IR');
+                } else {
+                    this.value = '';
+                }
+            });
+        }
+
+        // ----- Form -----
+        function setupForm() {
+            const form = document.getElementById('billForm');
+            const billTypeSelect = document.getElementById('billType');
+            const otherDescGroup = document.getElementById('otherDescGroup');
+            const amountInput = document.getElementById('amount');
+
+            amountInput.addEventListener('input', function() {
+                const english = toEnglishNumber(this.value);
+                let raw = english.replace(/,/g, '').replace(/[^0-9]/g, '');
+                if (raw) {
+                    this.value = Number(raw).toLocaleString('fa-IR');
+                } else {
+                    this.value = '';
+                }
+            });
+
+            amountInput.addEventListener('blur', function() {
+                const english = toEnglishNumber(this.value);
+                let raw = english.replace(/,/g, '').replace(/[^0-9]/g, '');
+                if (raw) {
+                    this.value = Number(raw).toLocaleString('fa-IR');
+                } else {
+                    this.value = '';
+                }
+            });
+
+            billTypeSelect.addEventListener('change', function() {
+                otherDescGroup.style.display = this.value === 'سایر' ? 'block' : 'none';
+            });
+
+            document.getElementById('payDate').value = new Date().toISOString().split('T')[0];
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                const type = document.getElementById('billType').value;
+                let description = document.getElementById('description').value.trim();
+                const otherDesc = document.getElementById('otherDesc').value.trim();
+                if (type === 'سایر' && otherDesc) {
+                    description = description ? `${description} - ${otherDesc}` : otherDesc;
+                }
+
+                const date = document.getElementById('payDate').value;
+                const amountRaw = document.getElementById('amount').value;
+                const amount = parseFormattedNumber(amountRaw);
+                const pay_method = document.getElementById('payMethod').value.trim();
+
+                if (!date) { alert('لطفاً تاریخ را انتخاب کنید.'); return; }
+                if (!amount || amount <= 0) { alert('مبلغ معتبر وارد کنید.'); return; }
+                if (!pay_method) { alert('روش پرداخت را وارد کنید.'); return; }
+
+                addBill({
+                    location: currentLocation,
+                    type, date, amount, pay_method, description: description || ''
+                });
+
+                form.reset();
+                otherDescGroup.style.display = 'none';
+                document.getElementById('payDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('amount').value = '';
+            });
+        }
+
+        // ----- Report Modal -----
+        function setupReport() {
+            const reportBtn = document.getElementById('reportBtn');
+            const reportModal = document.getElementById('reportModal');
+            const reportContent = document.getElementById('reportContent');
+            const closeBtn = document.getElementById('reportCloseBtn');
+
+            function closeReport() { reportModal.classList.remove('active'); }
+
+            closeBtn.addEventListener('click', closeReport);
+            reportModal.addEventListener('click', function(e) { if (e.target === this) closeReport(); });
+
+            reportBtn.addEventListener('click', function() {
+                const locationBills = bills.filter(b => b.location === currentLocation);
+                if (locationBills.length === 0) {
+                    alert('هیچ قبضی برای گزارش وجود ندارد.');
+                    return;
+                }
+
+                let total = 0;
+                const typeCount = {};
+                const typeAmounts = {};
+                locationBills.forEach(b => {
+                    const amt = Number(b.amount);
+                    total += amt;
+                    typeCount[b.type] = (typeCount[b.type] || 0) + 1;
+                    typeAmounts[b.type] = (typeAmounts[b.type] || 0) + amt;
+                });
+
+                const sortedTypes = Object.keys(typeCount).sort();
+
+                let html = `
+                    <div class="report-header-icon"><i class="fas fa-file-invoice"></i></div>
+                    <div style="text-align:center; margin-bottom:12px; color:#004d40; font-weight:600; font-size:0.95rem;">
+                        ${currentLocation}
+                    </div>
+                `;
+
+                const badgeMap = {
+                    'آب': 'badge-water', 'گاز': 'badge-gas', 'برق': 'badge-electric',
+                    'تلفن': 'badge-phone', 'جریمه': 'badge-fine',
+                    'عوارض اتوبان': 'badge-toll', 'شارژ ساختمان': 'badge-building',
+                    'سایر': 'badge-other'
+                };
+
+                sortedTypes.forEach(type => {
+                    const count = typeCount[type];
+                    const amount = typeAmounts[type];
+                    const badgeClass = badgeMap[type] || 'badge-other';
+                    html += `
+                        <div class="report-item">
+                            <span><span class="badge ${badgeClass}">${type}</span></span>
+                            <span>
+                                <span style="font-weight:600;">${count}</span> قبض &nbsp;|&nbsp;
+                                <span style="font-weight:600; color:#004d40;">${formatNumber(amount)}</span> تومان
+                            </span>
+                        </div>
+                    `;
+                });
+
+                html += `
+                    <div class="report-total">
+                        <span>💰 مجموع کل</span>
+                        <span style="font-size:1.05rem;">${formatNumber(total)} تومان</span>
+                    </div>
+                    <div style="text-align:center; margin-top:10px; color:rgba(0,77,64,0.4); font-size:0.8rem;">
+                        تعداد کل قبض‌ها: ${locationBills.length}
+                    </div>
+                `;
+
+                reportContent.innerHTML = html;
+                reportModal.classList.add('active');
+            });
+        }
+
+        // ----- Export to Excel -----
+        function setupExport() {
+            document.getElementById('exportBtn').addEventListener('click', function() {
+                const locationBills = bills.filter(b => b.location === currentLocation);
+                if (locationBills.length === 0) {
+                    alert('هیچ قبضی برای خروجی وجود ندارد.');
+                    return;
+                }
+
+                const data = locationBills.map(b => ({
+                    'نوع قبض': b.type,
+                    'تاریخ (میلادی)': b.date || '',
+                    'تاریخ (شمسی)': toPersianDate(b.date),
+                    'مبلغ (تومان)': Number(b.amount),
+                    'روش پرداخت': b.pay_method || '',
+                    'توضیحات': b.description || ''
+                }));
+
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'قبض‌ها');
+                XLSX.writeFile(wb, `قبض‌های_${currentLocation}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            });
+        }
+
+        // ----- Init -----
+        async function init() {
+            setupLocationEditModal();
+            setupEditModal();
+            setupForm();
+            setupReport();
+            setupExport();
+            await loadBills();
+            renderTabs();
+            renderTable();
+        }
+
+        init();
+    })();
+</script>
+
+</body>
+</html>
