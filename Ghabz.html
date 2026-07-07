@@ -133,6 +133,7 @@
             gap: 10px;
             justify-content: center;
             margin-bottom: 25px;
+            align-items: center;
         }
 
         .location-item {
@@ -200,6 +201,26 @@
         .edit-location-btn:hover {
             background: rgba(0, 137, 123, 0.25);
             transform: scale(1.1) rotate(8deg);
+        }
+
+        .add-location-btn {
+            background: rgba(0, 137, 123, 0.15);
+            border: 1.5px dashed rgba(0, 137, 123, 0.3);
+            color: #004d40;
+            padding: 7px 16px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .add-location-btn:hover {
+            background: rgba(0, 137, 123, 0.25);
+            transform: scale(1.02);
+            border-color: #00897b;
         }
 
         .form-section {
@@ -707,6 +728,18 @@
     </div>
 </div>
 
+<!-- Add Location Modal -->
+<div class="modal-overlay" id="addLocationModal">
+    <div class="modal-box">
+        <h3><i class="fas fa-plus-circle" style="color: #00897b;"></i> افزودن مکان جدید</h3>
+        <input type="text" id="newLocationInput" placeholder="نام مکان جدید را وارد کنید...">
+        <div class="modal-actions">
+            <button class="btn-cancel" id="addLocationCancelBtn">انصراف</button>
+            <button class="btn-confirm" id="addLocationConfirmBtn">افزودن</button>
+        </div>
+    </div>
+</div>
+
 <!-- Report Modal -->
 <div class="modal-overlay" id="reportModal">
     <div class="modal-box report-modal-box">
@@ -737,10 +770,9 @@
         let editingBillId = null;
 
         // ============================================================
-        // 🔢 توابع تبدیل و فرمت اعداد (اصلاح‌شده کامل)
+        // 🔢 توابع تبدیل و فرمت اعداد
         // ============================================================
 
-        // 1️⃣ تبدیل اعداد فارسی به انگلیسی
         function toEnglishNumber(str) {
             if (!str) return '';
             const persianNumbers = {
@@ -752,7 +784,6 @@
             });
         }
 
-        // 2️⃣ فرمت عدد با کاما (برای نمایش)
         function formatNumber(num) {
             if (num === undefined || num === null || num === '') return '';
             const str = String(num).replace(/,/g, '');
@@ -760,17 +791,13 @@
             return Number(str).toLocaleString('fa-IR');
         }
 
-        // 3️⃣ حذف همه کاراکترهای غیرعددی (برای ذخیره در دیتابیس)
         function parseFormattedNumber(str) {
             if (!str) return '';
-            // 1. تبدیل اعداد فارسی به انگلیسی
             const english = toEnglishNumber(str);
-            // 2. حذف همه کاراکترها به جز اعداد (0-9)
             const clean = english.replace(/[^0-9]/g, '');
-            return clean; // برگرداندن رشته عددی خالص
+            return clean;
         }
 
-        // ----- Helper: Persian date -----
         function toPersianDate(gregorianDate) {
             if (!gregorianDate) return '—';
             try {
@@ -800,11 +827,21 @@
                 if (error) throw error;
                 bills = data || [];
                 
-                // Extract unique locations from data
+                // استخراج مکان‌های منحصر‌به‌فرد از داده‌ها
                 const locations = new Set();
                 bills.forEach(b => locations.add(b.location));
+                
+                // اگر مکان‌هایی وجود دارد، از آنها استفاده کن، در غیر این صورت از لیست پیش‌فرض
                 if (locations.size > 0) {
                     locationNames = Array.from(locations).sort();
+                } else {
+                    // اگر هیچ قبضی وجود ندارد، لیست پیش‌فرض را نگه دار
+                    locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                }
+                
+                // اگر مکان فعلی در لیست نیست، اولین مکان را انتخاب کن
+                if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
+                    currentLocation = locationNames[0];
                 }
                 
                 renderTable();
@@ -820,7 +857,6 @@
         async function addBill(bill) {
             showLoading(true);
             try {
-                // 🔑 تبدیل مقدار مبلغ به عدد خالص
                 const rawAmount = parseFormattedNumber(bill.amount);
                 if (!rawAmount || rawAmount === '0') {
                     alert('لطفاً مبلغ معتبر وارد کنید.');
@@ -828,7 +864,7 @@
                     return;
                 }
                 
-                const numericAmount = Number(rawAmount); // تبدیل به عدد
+                const numericAmount = Number(rawAmount);
                 
                 const { data, error } = await supabase
                     .from(TABLE_NAME)
@@ -836,7 +872,7 @@
                         location: bill.location,
                         type: bill.type,
                         date: bill.date,
-                        amount: numericAmount, // ✅ عدد خالص بدون کاما
+                        amount: numericAmount,
                         pay_method: bill.pay_method,
                         description: bill.description || ''
                     }])
@@ -845,10 +881,13 @@
                 if (error) throw error;
                 if (data && data.length > 0) {
                     bills.unshift(data[0]);
-                    if (!locationNames.includes(data[0].location)) {
-                        locationNames.push(data[0].location);
-                        locationNames.sort();
-                    }
+                    
+                    // به‌روزرسانی لیست مکان‌ها
+                    const locations = new Set();
+                    bills.forEach(b => locations.add(b.location));
+                    locationNames = Array.from(locations).sort();
+                    if (locationNames.length === 0) locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                    
                     renderTable();
                     renderTabs();
                 }
@@ -863,7 +902,6 @@
         async function updateBill(id, updates) {
             showLoading(true);
             try {
-                // 🔑 تبدیل مقدار مبلغ به عدد خالص
                 const rawAmount = parseFormattedNumber(updates.amount);
                 if (!rawAmount || rawAmount === '0') {
                     alert('لطفاً مبلغ معتبر وارد کنید.');
@@ -878,7 +916,7 @@
                     .update({
                         type: updates.type,
                         date: updates.date,
-                        amount: numericAmount, // ✅ عدد خالص بدون کاما
+                        amount: numericAmount,
                         pay_method: updates.pay_method,
                         description: updates.description || ''
                     })
@@ -890,7 +928,7 @@
                     const index = bills.findIndex(b => b.id === id);
                     if (index !== -1) bills[index] = data[0];
                     
-                    // Update locationNames if needed
+                    // به‌روزرسانی لیست مکان‌ها
                     const locations = new Set();
                     bills.forEach(b => locations.add(b.location));
                     locationNames = Array.from(locations).sort();
@@ -920,11 +958,21 @@
                 if (error) throw error;
                 bills = bills.filter(b => b.id !== id);
                 
-                // Update locationNames
+                // به‌روزرسانی لیست مکان‌ها (حتی اگر خالی شد، مکان‌ها باقی بمانند)
                 const locations = new Set();
                 bills.forEach(b => locations.add(b.location));
-                locationNames = Array.from(locations).sort();
-                if (locationNames.length === 0) locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                
+                if (locations.size > 0) {
+                    locationNames = Array.from(locations).sort();
+                } else {
+                    // اگر همه قبض‌ها حذف شدند، لیست پیش‌فرض را نگه دار
+                    // اما مکان فعلی را تغییر نده
+                }
+                
+                // اگر مکان فعلی در لیست نیست، اولین مکان را انتخاب کن
+                if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
+                    currentLocation = locationNames[0];
+                }
                 
                 renderTable();
                 renderTabs();
@@ -968,12 +1016,38 @@
             }
         }
 
+        // ----- Add Location -----
+        async function addNewLocation(locationName) {
+            // فقط نام مکان را به لیست اضافه می‌کنیم (بدون ایجاد قبض)
+            if (!locationName.trim()) {
+                alert('لطفاً نام مکان را وارد کنید.');
+                return;
+            }
+            
+            if (locationNames.includes(locationName.trim())) {
+                alert('این مکان قبلاً وجود دارد.');
+                return;
+            }
+            
+            locationNames.push(locationName.trim());
+            locationNames.sort();
+            currentLocation = locationName.trim();
+            
+            renderTabs();
+            renderTable();
+        }
+
         // ----- Render Tabs -----
         function renderTabs() {
             const container = document.getElementById('locationTabs');
             container.innerHTML = '';
             
-            // Ensure currentLocation exists in locationNames
+            // اگر لیست مکان‌ها خالی است، از لیست پیش‌فرض استفاده کن
+            if (locationNames.length === 0) {
+                locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+            }
+            
+            // اطمینان از وجود مکان فعلی در لیست
             if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
                 currentLocation = locationNames[0];
             }
@@ -994,6 +1068,17 @@
                 div.appendChild(editBtn);
                 container.appendChild(div);
             });
+
+            // دکمه افزودن مکان جدید
+            const addBtn = document.createElement('button');
+            addBtn.className = 'add-location-btn';
+            addBtn.innerHTML = '<i class="fas fa-plus"></i> مکان جدید';
+            addBtn.addEventListener('click', function() {
+                document.getElementById('addLocationModal').classList.add('active');
+                document.getElementById('newLocationInput').value = '';
+                document.getElementById('newLocationInput').focus();
+            });
+            container.appendChild(addBtn);
 
             document.querySelectorAll('.location-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
@@ -1048,6 +1133,37 @@
             });
         }
 
+        // ----- Add Location Modal -----
+        function setupAddLocationModal() {
+            const modal = document.getElementById('addLocationModal');
+            const input = document.getElementById('newLocationInput');
+            const confirmBtn = document.getElementById('addLocationConfirmBtn');
+            const cancelBtn = document.getElementById('addLocationCancelBtn');
+
+            function closeModal() {
+                modal.classList.remove('active');
+                input.value = '';
+            }
+
+            cancelBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+            confirmBtn.addEventListener('click', function() {
+                const newName = input.value.trim();
+                if (!newName) { alert('لطفاً نام مکان را وارد کنید.'); return; }
+                if (locationNames.includes(newName)) {
+                    alert('این مکان قبلاً وجود دارد.');
+                    return;
+                }
+                addNewLocation(newName);
+                closeModal();
+            });
+
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') confirmBtn.click();
+            });
+        }
+
         // ----- Render Table (sorted by date DESC) -----
         function renderTable() {
             const tbody = document.getElementById('billsTableBody');
@@ -1064,7 +1180,7 @@
             }
             emptyState.style.display = 'none';
 
-            tbody.innerHTML = locationBills.map((bill, index) => {
+            tbody.innerHTML = locationBills.map((bill) => {
                 let badgeClass = 'badge';
                 const typeMap = {
                     'آب': 'badge-water', 'گاز': 'badge-gas', 'برق': 'badge-electric',
@@ -1337,6 +1453,7 @@
         // ----- Init -----
         async function init() {
             setupLocationEditModal();
+            setupAddLocationModal();
             setupEditModal();
             setupForm();
             setupReport();
