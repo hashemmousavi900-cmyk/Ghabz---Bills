@@ -736,7 +736,41 @@
         let editingLocation = null;
         let editingBillId = null;
 
-        // ----- Helpers -----
+        // ============================================================
+        // 🔢 توابع تبدیل و فرمت اعداد (اصلاح‌شده کامل)
+        // ============================================================
+
+        // 1️⃣ تبدیل اعداد فارسی به انگلیسی
+        function toEnglishNumber(str) {
+            if (!str) return '';
+            const persianNumbers = {
+                '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+                '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
+            };
+            return str.replace(/[۰-۹]/g, function(match) {
+                return persianNumbers[match] || match;
+            });
+        }
+
+        // 2️⃣ فرمت عدد با کاما (برای نمایش)
+        function formatNumber(num) {
+            if (num === undefined || num === null || num === '') return '';
+            const str = String(num).replace(/,/g, '');
+            if (!str || isNaN(str)) return '';
+            return Number(str).toLocaleString('fa-IR');
+        }
+
+        // 3️⃣ حذف همه کاراکترهای غیرعددی (برای ذخیره در دیتابیس)
+        function parseFormattedNumber(str) {
+            if (!str) return '';
+            // 1. تبدیل اعداد فارسی به انگلیسی
+            const english = toEnglishNumber(str);
+            // 2. حذف همه کاراکترها به جز اعداد (0-9)
+            const clean = english.replace(/[^0-9]/g, '');
+            return clean; // برگرداندن رشته عددی خالص
+        }
+
+        // ----- Helper: Persian date -----
         function toPersianDate(gregorianDate) {
             if (!gregorianDate) return '—';
             try {
@@ -748,28 +782,6 @@
                 }).format(date);
             } catch(e) { return gregorianDate; }
         }
-
-     // ----- تبدیل اعداد فارسی به انگلیسی -----
-function toEnglishNumber(str) {
-    if (!str) return '';
-    const persianNumbers = {
-        '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
-        '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
-    };
-    return str.replace(/[۰-۹]/g, function(match) {
-        return persianNumbers[match] || match;
-    });
-}
-
-// ----- حذف کاما و تبدیل به عدد خالص (اصلاح‌شده) -----
-function parseFormattedNumber(str) {
-    if (!str) return '';
-    // 1. تبدیل اعداد فارسی به انگلیسی
-    const english = toEnglishNumber(str);
-    // 2. حذف همه کاراکترهای غیرعددی (کاما، فاصله، خط تیره و...)
-    const clean = String(english).replace(/[^0-9]/g, '');
-    return clean; // برگرداندن عدد خالص به صورت رشته
-}
 
         // ----- Loading -----
         function showLoading(show) {
@@ -805,53 +817,71 @@ function parseFormattedNumber(str) {
             }
         }
 
-       async function addBill(bill) {
-    showLoading(true);
-    try {
-        // اطمینان از اینکه amount عدد خالص است
-        const cleanAmount = parseFormattedNumber(bill.amount);
-        if (!cleanAmount || isNaN(cleanAmount)) {
-            alert('مبلغ وارد شده معتبر نیست.');
-            showLoading(false);
-            return;
-        }
+        async function addBill(bill) {
+            showLoading(true);
+            try {
+                // 🔑 تبدیل مقدار مبلغ به عدد خالص
+                const rawAmount = parseFormattedNumber(bill.amount);
+                if (!rawAmount || rawAmount === '0') {
+                    alert('لطفاً مبلغ معتبر وارد کنید.');
+                    showLoading(false);
+                    return;
+                }
+                
+                const numericAmount = Number(rawAmount); // تبدیل به عدد
+                
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .insert([{
+                        location: bill.location,
+                        type: bill.type,
+                        date: bill.date,
+                        amount: numericAmount, // ✅ عدد خالص بدون کاما
+                        pay_method: bill.pay_method,
+                        description: bill.description || ''
+                    }])
+                    .select();
 
-        const { data, error } = await supabase
-            .from(TABLE_NAME)
-            .insert([{
-                location: bill.location,
-                type: bill.type,
-                date: bill.date,
-                amount: Number(cleanAmount), // تبدیل به عدد
-                pay_method: bill.pay_method,
-                description: bill.description || ''
-            }])
-            .select();
-
-        if (error) throw error;
-        if (data && data.length > 0) {
-            bills.unshift(data[0]);
-            if (!locationNames.includes(data[0].location)) {
-                locationNames.push(data[0].location);
-                locationNames.sort();
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    bills.unshift(data[0]);
+                    if (!locationNames.includes(data[0].location)) {
+                        locationNames.push(data[0].location);
+                        locationNames.sort();
+                    }
+                    renderTable();
+                    renderTabs();
+                }
+            } catch (err) {
+                console.error('Error adding bill:', err);
+                alert('خطا در ثبت قبض: ' + err.message);
+            } finally {
+                showLoading(false);
             }
-            renderTable();
-            renderTabs();
         }
-    } catch (err) {
-        console.error('Error adding bill:', err);
-        alert('خطا در ثبت قبض: ' + err.message);
-    } finally {
-        showLoading(false);
-    }
-}
 
         async function updateBill(id, updates) {
             showLoading(true);
             try {
+                // 🔑 تبدیل مقدار مبلغ به عدد خالص
+                const rawAmount = parseFormattedNumber(updates.amount);
+                if (!rawAmount || rawAmount === '0') {
+                    alert('لطفاً مبلغ معتبر وارد کنید.');
+                    showLoading(false);
+                    return;
+                }
+                
+                const numericAmount = Number(rawAmount);
+                
                 const { data, error } = await supabase
                     .from(TABLE_NAME)
-                    .update(updates)
+                    .update({
+                        type: updates.type,
+                        date: updates.date,
+                        amount: numericAmount, // ✅ عدد خالص بدون کاما
+                        pay_method: updates.pay_method,
+                        description: updates.description || ''
+                    })
                     .eq('id', id)
                     .select();
 
