@@ -905,15 +905,25 @@
         }
 
         // به‌روزرسانی locationNames از bills بدون حذف مکان‌های خالی
-        function updateLocationNamesFromBills() {
-            const locationsFromBills = new Set();
-            bills.forEach(b => locationsFromBills.add(b.location));
-            
-            // مکان‌هایی که در bills هستند را نگه دار
-            // مکان‌هایی که در bills نیستند اما در locationNames هستند را نگه دار
-            const mergedLocations = new Set([...locationNames, ...locationsFromBills]);
-            locationNames = Array.from(mergedLocations).sort();
+function updateLocationNamesFromBills() {
+    // فقط مکان‌هایی که در bills هستند را بگیر
+    const locationsFromBills = new Set();
+    bills.forEach(b => {
+        if (b.location) locationsFromBills.add(b.location);
+    });
+    
+    // اگر هیچ مکان‌هایی در bills نباشد، از لیست فعلی استفاده کن
+    if (locationsFromBills.size === 0) {
+        // اگر لیست فعلی خالی است، از لیست پیش‌فرض استفاده کن
+        if (locationNames.length === 0) {
+            locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
         }
+        return;
+    }
+    
+    // فقط مکان‌هایی که در bills هستند را نگه دار
+    locationNames = Array.from(locationsFromBills).sort();
+}
 
         async function addBill(bill) {
             showLoading(true);
@@ -1070,61 +1080,61 @@
             }
         }
 
-        async function deleteLocation(locationName) {
-            if (!locationNames.includes(locationName)) {
-                alert('این مکان وجود ندارد.');
-                return;
-            }
+      async function deleteLocation(locationName) {
+    if (!locationNames.includes(locationName)) {
+        alert('این مکان وجود ندارد.');
+        return;
+    }
 
-            const locationBills = bills.filter(b => b.location === locationName);
-            const billCount = locationBills.length;
+    const locationBills = bills.filter(b => b.location === locationName);
+    const billCount = locationBills.length;
 
-            let confirmMessage = `آیا از حذف مکان "${locationName}" اطمینان دارید؟`;
-            if (billCount > 0) {
-                confirmMessage += `\n\n⚠️ این مکان دارای ${billCount} قبض است که همگی حذف خواهند شد!`;
-            }
+    let confirmMessage = `آیا از حذف مکان "${locationName}" اطمینان دارید؟`;
+    if (billCount > 0) {
+        confirmMessage += `\n\n⚠️ این مکان دارای ${billCount} قبض است که همگی حذف خواهند شد!`;
+    }
 
-            if (!confirm(confirmMessage)) return;
+    if (!confirm(confirmMessage)) return;
 
-            showLoading(true);
-            try {
-                // حذف تمام قبض‌های این مکان
-                if (billCount > 0) {
-                    const { error: deleteError } = await supabase
-                        .from(TABLE_NAME)
-                        .delete()
-                        .eq('location', locationName);
+    showLoading(true);
+    try {
+        // حذف تمام قبض‌های این مکان
+        if (billCount > 0) {
+            const { error: deleteError } = await supabase
+                .from(TABLE_NAME)
+                .delete()
+                .eq('location', locationName);
 
-                    if (deleteError) throw deleteError;
-                }
-
-                // حذف مکان از لیست
-                locationNames = locationNames.filter(loc => loc !== locationName);
-                
-                // حذف قبض‌های این مکان از لیست bills
-                bills = bills.filter(b => b.location !== locationName);
-
-                // اگر لیست مکان‌ها خالی شد، لیست پیش‌فرض را قرار بده
-                if (locationNames.length === 0) {
-                    locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
-                }
-
-                // انتخاب مکان جدید
-                if (currentLocation === locationName) {
-                    currentLocation = locationNames[0];
-                }
-
-                renderTable();
-                renderTabs();
-                renderLocationManagement();
-                alert(`مکان "${locationName}" با موفقیت حذف شد.`);
-            } catch (err) {
-                console.error('Error deleting location:', err);
-                alert('خطا در حذف مکان: ' + err.message);
-            } finally {
-                showLoading(false);
-            }
+            if (deleteError) throw deleteError;
         }
+
+        // حذف مکان از لیست bills
+        bills = bills.filter(b => b.location !== locationName);
+        
+        // به‌روزرسانی لیست مکان‌ها از bills
+        updateLocationNamesFromBills();
+        
+        // اگر لیست مکان‌ها خالی شد، لیست پیش‌فرض را قرار بده
+        if (locationNames.length === 0) {
+            locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+        }
+
+        // انتخاب مکان جدید
+        if (currentLocation === locationName) {
+            currentLocation = locationNames[0];
+        }
+
+        renderTable();
+        renderTabs();
+        renderLocationManagement();
+        alert(`مکان "${locationName}" با موفقیت حذف شد.`);
+    } catch (err) {
+        console.error('Error deleting location:', err);
+        alert('خطا در حذف مکان: ' + err.message);
+    } finally {
+        showLoading(false);
+    }
+}
 
         async function addNewLocation(locationName) {
             if (!locationName.trim()) {
