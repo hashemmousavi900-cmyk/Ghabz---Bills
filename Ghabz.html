@@ -900,8 +900,8 @@
 
         // ----- State -----
         let bills = [];
-        let currentLocation = 'خانه ۱';
-        let locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+        let currentLocation = '';
+        let locationNames = [];
         let editingLocation = null;
         let editingBillId = null;
 
@@ -977,49 +977,55 @@
         // 📊 توابع اصلی CRUD
         // ============================================================
 
-async function loadBills() {
-    showLoading(true);
-    try {
-        const { data, error } = await supabase
-            .from(TABLE_NAME)
-            .select('*')
-            .order('date', { ascending: false });
+        async function loadBills() {
+            showLoading(true);
+            try {
+                const { data, error } = await supabase
+                    .from(TABLE_NAME)
+                    .select('*')
+                    .order('date', { ascending: false });
 
-        if (error) throw error;
-        bills = data || [];
-        
-        // به‌روزرسانی لیست مکان‌ها از داده‌ها
-        updateLocationNamesFromBills();
-        
-        // بارگذاری ترتیب ذخیره شده
-        loadLocationOrder();
-        
-        renderTable();
-        renderTabs();
-    } catch (err) {
-        console.error('Error loading bills:', err);
-        alert('خطا در بارگذاری داده‌ها: ' + err.message);
-    } finally {
-        showLoading(false);
-    }
-}
+                if (error) throw error;
+                bills = data || [];
+                
+                // به‌روزرسانی لیست مکان‌ها از داده‌ها
+                updateLocationNamesFromBills();
+                
+                // بارگذاری ترتیب ذخیره شده
+                loadLocationOrder();
+                
+                renderTable();
+                renderTabs();
+            } catch (err) {
+                console.error('Error loading bills:', err);
+                alert('خطا در بارگذاری داده‌ها: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
+        }
 
-function updateLocationNamesFromBills() {
-    // فقط مکان‌هایی که در bills هستند را بگیر
-    const locationsFromBills = new Set();
-    bills.forEach(b => {
-        if (b.location) locationsFromBills.add(b.location);
-    });
-    
-    // اگر هیچ مکان‌هایی در bills نباشد، لیست را خالی کن
-    if (locationsFromBills.size === 0) {
-        locationNames = [];
-        return;
-    }
-    
-    // فقط مکان‌هایی که در bills هستند را نگه دار
-    locationNames = Array.from(locationsFromBills).sort();
-}
+        function updateLocationNamesFromBills() {
+            // فقط مکان‌هایی که در bills هستند را بگیر
+            const locationsFromBills = new Set();
+            bills.forEach(b => {
+                if (b.location) locationsFromBills.add(b.location);
+            });
+            
+            // اگر هیچ مکان‌هایی در bills نباشد، لیست را خالی کن
+            if (locationsFromBills.size === 0) {
+                locationNames = [];
+                currentLocation = '';
+                return;
+            }
+            
+            // فقط مکان‌هایی که در bills هستند را نگه دار
+            locationNames = Array.from(locationsFromBills).sort();
+            
+            // اگر currentLocation در لیست نیست، اولین مکان را انتخاب کن
+            if (!locationNames.includes(currentLocation)) {
+                currentLocation = locationNames[0];
+            }
+        }
 
         async function addBill(bill) {
             showLoading(true);
@@ -1049,6 +1055,7 @@ function updateLocationNamesFromBills() {
                 if (data && data.length > 0) {
                     bills.unshift(data[0]);
                     updateLocationNamesFromBills();
+                    saveLocationOrder();
                     renderTable();
                     renderTabs();
                 }
@@ -1089,6 +1096,7 @@ function updateLocationNamesFromBills() {
                     const index = bills.findIndex(b => b.id === id);
                     if (index !== -1) bills[index] = data[0];
                     updateLocationNamesFromBills();
+                    saveLocationOrder();
                     renderTable();
                     renderTabs();
                 }
@@ -1114,10 +1122,7 @@ function updateLocationNamesFromBills() {
                 bills = bills.filter(b => b.id !== id);
                 
                 updateLocationNamesFromBills();
-                
-                if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
-                    currentLocation = locationNames[0];
-                }
+                saveLocationOrder();
                 
                 renderTable();
                 renderTabs();
@@ -1159,7 +1164,6 @@ function updateLocationNamesFromBills() {
                     locationNames[index] = newName.trim();
                 }
                 
-                // ذخیره ترتیب جدید
                 saveLocationOrder();
                 
                 if (currentLocation === oldName) currentLocation = newName.trim();
@@ -1167,6 +1171,7 @@ function updateLocationNamesFromBills() {
                 renderTable();
                 renderTabs();
                 renderLocationManagement();
+                showToast(`نام مکان با موفقیت تغییر یافت`);
             } catch (err) {
                 console.error('Error updating location:', err);
                 alert('خطا در ویرایش نام مکان: ' + err.message);
@@ -1206,16 +1211,14 @@ function updateLocationNamesFromBills() {
                 
                 locationNames = locationNames.filter(loc => loc !== locationName);
                 
+                // اگر لیست خالی شد، currentLocation را خالی کن
                 if (locationNames.length === 0) {
-                    locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
-                }
-
-                // ذخیره ترتیب جدید
-                saveLocationOrder();
-
-                if (currentLocation === locationName) {
+                    currentLocation = '';
+                } else if (currentLocation === locationName) {
                     currentLocation = locationNames[0];
                 }
+
+                saveLocationOrder();
 
                 renderTable();
                 renderTabs();
@@ -1254,125 +1257,124 @@ function updateLocationNamesFromBills() {
         // 🎯 ذخیره و بازیابی ترتیب
         // ============================================================
 
-function saveLocationOrder() {
-    try {
-        localStorage.setItem('locationOrder', JSON.stringify(locationNames));
-    } catch (e) {
-        console.warn('Could not save location order:', e);
-    }
-}
-
-function loadLocationOrder() {
-    try {
-        const saved = localStorage.getItem('locationOrder');
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                // فقط مکان‌هایی را نگه دار که در bills وجود دارند
-                const validLocations = parsed.filter(loc => locationNames.includes(loc));
-                if (validLocations.length > 0) {
-                    // مکان‌های معتبر را به ترتیب saved قرار بده
-                    const ordered = [];
-                    validLocations.forEach(loc => {
-                        if (locationNames.includes(loc)) {
-                            ordered.push(loc);
-                        }
-                    });
-                    // اضافه کردن مکان‌هایی که در saved نیستند
-                    locationNames.forEach(loc => {
-                        if (!ordered.includes(loc)) {
-                            ordered.push(loc);
-                        }
-                    });
-                    locationNames = ordered;
-                    return true;
-                }
+        function saveLocationOrder() {
+            try {
+                localStorage.setItem('locationOrder', JSON.stringify(locationNames));
+            } catch (e) {
+                console.warn('Could not save location order:', e);
             }
         }
-    } catch (e) {
-        console.warn('Could not load location order:', e);
-    }
-    return false;
-}
 
-// ============================================================
-// 🎨 رندرینگ
-// ============================================================
+        function loadLocationOrder() {
+            try {
+                const saved = localStorage.getItem('locationOrder');
+                if (saved && locationNames.length > 0) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        // فقط مکان‌هایی را نگه دار که در locationNames وجود دارند
+                        const validLocations = parsed.filter(loc => locationNames.includes(loc));
+                        if (validLocations.length > 0) {
+                            // مکان‌های معتبر را به ترتیب saved قرار بده
+                            const ordered = [];
+                            validLocations.forEach(loc => {
+                                if (locationNames.includes(loc) && !ordered.includes(loc)) {
+                                    ordered.push(loc);
+                                }
+                            });
+                            // اضافه کردن مکان‌هایی که در saved نیستند
+                            locationNames.forEach(loc => {
+                                if (!ordered.includes(loc)) {
+                                    ordered.push(loc);
+                                }
+                            });
+                            locationNames = ordered;
+                            return true;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not load location order:', e);
+            }
+            return false;
+        }
 
-function renderTabs() {
-    const container = document.getElementById('locationTabs');
-    
-    // حذف Sortable قبلی
-    if (container._sortable) {
-        container._sortable.destroy();
-    }
-    
-    container.innerHTML = '';
-    
-    // اگر لیست مکان‌ها خالی است، پیام نمایش بده
-    if (locationNames.length === 0) {
-        const emptyMsg = document.createElement('div');
-        emptyMsg.style.cssText = 'color: #999; padding: 10px; font-size: 0.9rem; text-align: center; width: 100%;';
-        emptyMsg.innerHTML = '<i class="fas fa-info-circle" style="display:block; font-size:1.5rem; margin-bottom:8px; color:#ccc;"></i> هیچ مکانی وجود ندارد. لطفاً یک مکان جدید اضافه کنید.';
-        container.appendChild(emptyMsg);
-        
-        // دکمه مدیریت مکان‌ها
-        const manageBtn = document.createElement('button');
-        manageBtn.className = 'manage-locations-btn';
-        manageBtn.style.marginTop = '10px';
-        manageBtn.innerHTML = '<i class="fas fa-plus"></i> افزودن مکان جدید';
-        manageBtn.addEventListener('click', function() {
-            renderLocationManagement();
-            document.getElementById('locationManagementModal').classList.add('active');
-            document.getElementById('newLocationInputManage').focus();
-        });
-        container.appendChild(manageBtn);
-        return;
-    }
-    
-    if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
-        currentLocation = locationNames[0];
-    }
-    
-    locationNames.forEach((loc, index) => {
-        const div = document.createElement('div');
-        div.className = 'location-item';
-        div.dataset.index = index;
-        div.dataset.location = loc;
-        
-        const dragHandle = document.createElement('span');
-        dragHandle.className = 'drag-handle';
-        dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
-        dragHandle.title = 'برای جابجایی بکشید';
-        
-        const btn = document.createElement('button');
-        btn.className = `location-btn ${loc === currentLocation ? 'active' : ''}`;
-        btn.dataset.location = loc;
-        btn.innerHTML = `<i class="fas fa-location-dot"></i> ${loc}`;
-        btn.addEventListener('click', function() {
-            currentLocation = loc;
-            renderTabs();
-            renderTable();
-        });
-        
-        div.appendChild(dragHandle);
-        div.appendChild(btn);
-        container.appendChild(div);
-    });
+        // ============================================================
+        // 🎨 رندرینگ
+        // ============================================================
 
-    const manageBtn = document.createElement('button');
-    manageBtn.className = 'manage-locations-btn';
-    manageBtn.innerHTML = '<i class="fas fa-cog"></i> مدیریت مکان‌ها';
-    manageBtn.addEventListener('click', function() {
-        renderLocationManagement();
-        document.getElementById('locationManagementModal').classList.add('active');
-        document.getElementById('newLocationInputManage').focus();
-    });
-    container.appendChild(manageBtn);
+        function renderTabs() {
+            const container = document.getElementById('locationTabs');
+            
+            // حذف Sortable قبلی
+            if (container._sortable) {
+                container._sortable.destroy();
+            }
+            
+            container.innerHTML = '';
+            
+            // اگر لیست مکان‌ها خالی است، پیام نمایش بده
+            if (locationNames.length === 0) {
+                const emptyMsg = document.createElement('div');
+                emptyMsg.style.cssText = 'color: #999; padding: 10px; font-size: 0.9rem; text-align: center; width: 100%;';
+                emptyMsg.innerHTML = '<i class="fas fa-info-circle" style="display:block; font-size:1.5rem; margin-bottom:8px; color:#ccc;"></i> هیچ مکانی وجود ندارد. لطفاً یک مکان جدید اضافه کنید.';
+                container.appendChild(emptyMsg);
+                
+                const manageBtn = document.createElement('button');
+                manageBtn.className = 'manage-locations-btn';
+                manageBtn.style.marginTop = '10px';
+                manageBtn.innerHTML = '<i class="fas fa-plus"></i> افزودن مکان جدید';
+                manageBtn.addEventListener('click', function() {
+                    renderLocationManagement();
+                    document.getElementById('locationManagementModal').classList.add('active');
+                    document.getElementById('newLocationInputManage').focus();
+                });
+                container.appendChild(manageBtn);
+                return;
+            }
+            
+            if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
+                currentLocation = locationNames[0];
+            }
+            
+            locationNames.forEach((loc, index) => {
+                const div = document.createElement('div');
+                div.className = 'location-item';
+                div.dataset.index = index;
+                div.dataset.location = loc;
+                
+                const dragHandle = document.createElement('span');
+                dragHandle.className = 'drag-handle';
+                dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
+                dragHandle.title = 'برای جابجایی بکشید';
+                
+                const btn = document.createElement('button');
+                btn.className = `location-btn ${loc === currentLocation ? 'active' : ''}`;
+                btn.dataset.location = loc;
+                btn.innerHTML = `<i class="fas fa-location-dot"></i> ${loc}`;
+                btn.addEventListener('click', function() {
+                    currentLocation = loc;
+                    renderTabs();
+                    renderTable();
+                });
+                
+                div.appendChild(dragHandle);
+                div.appendChild(btn);
+                container.appendChild(div);
+            });
 
-    // راه‌اندازی Sortable
-    setupSortable(container);
-}
+            const manageBtn = document.createElement('button');
+            manageBtn.className = 'manage-locations-btn';
+            manageBtn.innerHTML = '<i class="fas fa-cog"></i> مدیریت مکان‌ها';
+            manageBtn.addEventListener('click', function() {
+                renderLocationManagement();
+                document.getElementById('locationManagementModal').classList.add('active');
+                document.getElementById('newLocationInputManage').focus();
+            });
+            container.appendChild(manageBtn);
+
+            // راه‌اندازی Sortable
+            setupSortable(container);
+        }
 
         function setupSortable(container) {
             const sortable = new Sortable(container, {
@@ -1410,7 +1412,13 @@ function renderTabs() {
             container.innerHTML = '';
 
             if (locationNames.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:20px; color:#999;">هیچ مکانی وجود ندارد.</div>';
+                container.innerHTML = `
+                    <div style="text-align:center; padding:20px; color:#999;">
+                        <i class="fas fa-info-circle" style="font-size:2rem; display:block; margin-bottom:10px; color:#ccc;"></i>
+                        <p>هیچ مکانی وجود ندارد.</p>
+                        <p style="font-size:0.85rem; margin-top:5px;">با استفاده از فرم زیر، مکان جدید اضافه کنید.</p>
+                    </div>
+                `;
                 return;
             }
 
@@ -1458,15 +1466,30 @@ function renderTabs() {
             const emptyState = document.getElementById('emptyState');
             const locationTitle = document.getElementById('locationTitle');
             
+            // اگر مکان فعلی وجود ندارد
+            if (!currentLocation || !locationNames.includes(currentLocation)) {
+                if (locationNames.length > 0) {
+                    currentLocation = locationNames[0];
+                } else {
+                    locationTitle.textContent = 'هیچ مکانی';
+                    tbody.innerHTML = '';
+                    emptyState.style.display = 'block';
+                    emptyState.querySelector('p').textContent = 'لطفاً ابتدا یک مکان اضافه کنید';
+                    return;
+                }
+            }
+            
             locationTitle.textContent = currentLocation;
             const locationBills = bills.filter(b => b.location === currentLocation);
 
             if (locationBills.length === 0) {
                 tbody.innerHTML = '';
                 emptyState.style.display = 'block';
+                emptyState.querySelector('p').textContent = 'هنوز قبضی در این مکان ثبت نشده است';
                 return;
             }
             emptyState.style.display = 'none';
+            emptyState.querySelector('p').textContent = 'هنوز قبضی ثبت نشده است';
 
             tbody.innerHTML = locationBills.map((bill) => {
                 let badgeClass = 'badge';
@@ -1610,6 +1633,12 @@ function renderTabs() {
             form.addEventListener('submit', function(e) {
                 e.preventDefault();
 
+                // بررسی وجود مکان
+                if (locationNames.length === 0) {
+                    alert('لطفاً ابتدا یک مکان اضافه کنید.');
+                    return;
+                }
+
                 const type = document.getElementById('billType').value;
                 let description = document.getElementById('description').value.trim();
                 const otherDesc = document.getElementById('otherDesc').value.trim();
@@ -1651,6 +1680,11 @@ function renderTabs() {
             reportModal.addEventListener('click', function(e) { if (e.target === this) closeReport(); });
 
             reportBtn.addEventListener('click', function() {
+                if (!currentLocation || locationNames.length === 0) {
+                    alert('هیچ مکانی وجود ندارد.');
+                    return;
+                }
+
                 const locationBills = bills.filter(b => b.location === currentLocation);
                 if (locationBills.length === 0) {
                     alert('هیچ قبضی برای گزارش وجود ندارد.');
@@ -1716,6 +1750,11 @@ function renderTabs() {
         // ----- Export to Excel -----
         function setupExport() {
             document.getElementById('exportBtn').addEventListener('click', function() {
+                if (!currentLocation || locationNames.length === 0) {
+                    alert('هیچ مکانی وجود ندارد.');
+                    return;
+                }
+
                 const locationBills = bills.filter(b => b.location === currentLocation);
                 if (locationBills.length === 0) {
                     alert('هیچ قبضی برای خروجی وجود ندارد.');
