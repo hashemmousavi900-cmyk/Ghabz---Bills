@@ -12,6 +12,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- SortableJS برای Drag & Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -134,23 +136,66 @@
             justify-content: center;
             margin-bottom: 15px;
             align-items: center;
+            min-height: 50px;
+            padding: 5px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.3);
+            transition: background 0.3s ease;
         }
 
         .location-item {
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 2px;
             background: rgba(255, 255, 255, 0.8);
             border-radius: 50px;
-            padding: 3px 3px 3px 14px;
+            padding: 3px 3px 3px 8px;
             border: 1.5px solid rgba(0, 137, 123, 0.2);
             box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
             transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: default;
         }
         .location-item:hover {
             box-shadow: 0 6px 20px rgba(0, 137, 123, 0.18);
             transform: translateY(-2px);
             border-color: #00897b;
+        }
+
+        .location-item.dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+        }
+
+        .location-item.sortable-chosen {
+            background: rgba(0, 137, 123, 0.15);
+            border-color: #00897b;
+            box-shadow: 0 8px 25px rgba(0, 137, 123, 0.2);
+        }
+
+        .location-item.sortable-ghost {
+            opacity: 0.3;
+            border: 2px dashed #00897b;
+            transform: scale(0.98);
+        }
+
+        .drag-handle {
+            cursor: grab;
+            color: #00897b;
+            padding: 4px 6px;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            user-select: none;
+            border-radius: 8px;
+        }
+
+        .drag-handle:hover {
+            color: #004d40;
+            background: rgba(0, 137, 123, 0.08);
+            transform: scale(1.1);
+        }
+
+        .drag-handle:active {
+            cursor: grabbing;
         }
 
         .location-btn {
@@ -653,17 +698,47 @@
             margin-bottom: 8px;
         }
 
+        /* Toast Notification */
+        .toast-message {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(0, 77, 64, 0.95);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+            z-index: 10000;
+            opacity: 0;
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-family: 'Vazir', sans-serif;
+        }
+
+        .toast-message.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .portal-container { padding: 15px; }
             .form-grid { grid-template-columns: 1fr; }
             .location-btn { padding: 6px 12px; font-size: 0.8rem; }
-            .location-item { padding: 2px 2px 2px 10px; }
+            .location-item { padding: 2px 2px 2px 6px; }
             h1 { font-size: 1.3rem; }
             .table-header h3 { font-size: 0.95rem; }
             .form-section { padding: 16px; }
             .table-section { padding: 14px; }
             .add-location-form { flex-direction: column; }
+            .drag-handle {
+                padding: 2px 4px;
+                font-size: 0.75rem;
+            }
         }
     </style>
 </head>
@@ -876,6 +951,28 @@
             document.getElementById('loadingOverlay').classList.toggle('active', show);
         }
 
+        // ----- Toast -----
+        function showToast(message) {
+            const existing = document.querySelector('.toast-message');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast-message';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.remove();
+                }, 500);
+            }, 2500);
+        }
+
         // ============================================================
         // 📊 توابع اصلی CRUD
         // ============================================================
@@ -891,8 +988,10 @@
                 if (error) throw error;
                 bills = data || [];
                 
-                // به‌روزرسانی لیست مکان‌ها از داده‌ها
                 updateLocationNamesFromBills();
+                
+                // بارگذاری ترتیب ذخیره شده
+                loadLocationOrder();
                 
                 renderTable();
                 renderTabs();
@@ -904,26 +1003,23 @@
             }
         }
 
-        // به‌روزرسانی locationNames از bills بدون حذف مکان‌های خالی
-function updateLocationNamesFromBills() {
-    // فقط مکان‌هایی که در bills هستند را بگیر
-    const locationsFromBills = new Set();
-    bills.forEach(b => {
-        if (b.location) locationsFromBills.add(b.location);
-    });
-    
-    // اگر هیچ مکان‌هایی در bills نباشد، از لیست فعلی استفاده کن
-    if (locationsFromBills.size === 0) {
-        // اگر لیست فعلی خالی است، از لیست پیش‌فرض استفاده کن
-        if (locationNames.length === 0) {
-            locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+        function updateLocationNamesFromBills() {
+            const locationsFromBills = new Set();
+            bills.forEach(b => {
+                if (b.location) locationsFromBills.add(b.location);
+            });
+            
+            if (locationsFromBills.size === 0) {
+                if (locationNames.length === 0) {
+                    locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                }
+                return;
+            }
+            
+            // ترکیب مکان‌های موجود با مکان‌های جدید
+            const merged = new Set([...locationNames, ...locationsFromBills]);
+            locationNames = Array.from(merged).sort();
         }
-        return;
-    }
-    
-    // فقط مکان‌هایی که در bills هستند را نگه دار
-    locationNames = Array.from(locationsFromBills).sort();
-}
 
         async function addBill(bill) {
             showLoading(true);
@@ -1017,7 +1113,6 @@ function updateLocationNamesFromBills() {
                 if (error) throw error;
                 bills = bills.filter(b => b.id !== id);
                 
-                // فقط مکان‌هایی که هنوز قبض دارند یا در لیست مکان‌ها هستند را نگه دار
                 updateLocationNamesFromBills();
                 
                 if (!locationNames.includes(currentLocation) && locationNames.length > 0) {
@@ -1048,7 +1143,6 @@ function updateLocationNamesFromBills() {
 
             showLoading(true);
             try {
-                // به‌روزرسانی در دیتابیس
                 const { error } = await supabase
                     .from(TABLE_NAME)
                     .update({ location: newName.trim() })
@@ -1056,7 +1150,6 @@ function updateLocationNamesFromBills() {
 
                 if (error) throw error;
 
-                // به‌روزرسانی در حافظه
                 bills.forEach(b => {
                     if (b.location === oldName) b.location = newName.trim();
                 });
@@ -1064,8 +1157,10 @@ function updateLocationNamesFromBills() {
                 const index = locationNames.indexOf(oldName);
                 if (index !== -1) {
                     locationNames[index] = newName.trim();
-                    locationNames.sort();
                 }
+                
+                // ذخیره ترتیب جدید
+                saveLocationOrder();
                 
                 if (currentLocation === oldName) currentLocation = newName.trim();
                 
@@ -1080,61 +1175,59 @@ function updateLocationNamesFromBills() {
             }
         }
 
-      async function deleteLocation(locationName) {
-    if (!locationNames.includes(locationName)) {
-        alert('این مکان وجود ندارد.');
-        return;
-    }
+        async function deleteLocation(locationName) {
+            if (!locationNames.includes(locationName)) {
+                alert('این مکان وجود ندارد.');
+                return;
+            }
 
-    const locationBills = bills.filter(b => b.location === locationName);
-    const billCount = locationBills.length;
+            const locationBills = bills.filter(b => b.location === locationName);
+            const billCount = locationBills.length;
 
-    let confirmMessage = `آیا از حذف مکان "${locationName}" اطمینان دارید؟`;
-    if (billCount > 0) {
-        confirmMessage += `\n\n⚠️ این مکان دارای ${billCount} قبض است که همگی حذف خواهند شد!`;
-    }
+            let confirmMessage = `آیا از حذف مکان "${locationName}" اطمینان دارید؟`;
+            if (billCount > 0) {
+                confirmMessage += `\n\n⚠️ این مکان دارای ${billCount} قبض است که همگی حذف خواهند شد!`;
+            }
 
-    if (!confirm(confirmMessage)) return;
+            if (!confirm(confirmMessage)) return;
 
-    showLoading(true);
-    try {
-        // حذف تمام قبض‌های این مکان
-        if (billCount > 0) {
-            const { error: deleteError } = await supabase
-                .from(TABLE_NAME)
-                .delete()
-                .eq('location', locationName);
+            showLoading(true);
+            try {
+                if (billCount > 0) {
+                    const { error: deleteError } = await supabase
+                        .from(TABLE_NAME)
+                        .delete()
+                        .eq('location', locationName);
 
-            if (deleteError) throw deleteError;
+                    if (deleteError) throw deleteError;
+                }
+
+                bills = bills.filter(b => b.location !== locationName);
+                
+                locationNames = locationNames.filter(loc => loc !== locationName);
+                
+                if (locationNames.length === 0) {
+                    locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
+                }
+
+                // ذخیره ترتیب جدید
+                saveLocationOrder();
+
+                if (currentLocation === locationName) {
+                    currentLocation = locationNames[0];
+                }
+
+                renderTable();
+                renderTabs();
+                renderLocationManagement();
+                showToast(`مکان "${locationName}" با موفقیت حذف شد`);
+            } catch (err) {
+                console.error('Error deleting location:', err);
+                alert('خطا در حذف مکان: ' + err.message);
+            } finally {
+                showLoading(false);
+            }
         }
-
-        // حذف مکان از لیست bills
-        bills = bills.filter(b => b.location !== locationName);
-        
-        // به‌روزرسانی لیست مکان‌ها از bills
-        updateLocationNamesFromBills();
-        
-        // اگر لیست مکان‌ها خالی شد، لیست پیش‌فرض را قرار بده
-        if (locationNames.length === 0) {
-            locationNames = ['خانه ۱', 'خانه ۲', 'خانه ۳', 'دفتر'];
-        }
-
-        // انتخاب مکان جدید
-        if (currentLocation === locationName) {
-            currentLocation = locationNames[0];
-        }
-
-        renderTable();
-        renderTabs();
-        renderLocationManagement();
-        alert(`مکان "${locationName}" با موفقیت حذف شد.`);
-    } catch (err) {
-        console.error('Error deleting location:', err);
-        alert('خطا در حذف مکان: ' + err.message);
-    } finally {
-        showLoading(false);
-    }
-}
 
         async function addNewLocation(locationName) {
             if (!locationName.trim()) {
@@ -1148,12 +1241,56 @@ function updateLocationNamesFromBills() {
             }
             
             locationNames.push(locationName.trim());
-            locationNames.sort();
+            saveLocationOrder();
             currentLocation = locationName.trim();
             
             renderTabs();
             renderTable();
             renderLocationManagement();
+            showToast(`مکان "${locationName.trim()}" اضافه شد`);
+        }
+
+        // ============================================================
+        // 🎯 ذخیره و بازیابی ترتیب
+        // ============================================================
+
+        function saveLocationOrder() {
+            try {
+                localStorage.setItem('locationOrder', JSON.stringify(locationNames));
+            } catch (e) {
+                console.warn('Could not save location order:', e);
+            }
+        }
+
+        function loadLocationOrder() {
+            try {
+                const saved = localStorage.getItem('locationOrder');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        // اطمینان از اینکه همه مکان‌های موجود در saved، در locationNames هستند
+                        const merged = [];
+                        parsed.forEach(loc => {
+                            if (locationNames.includes(loc)) {
+                                merged.push(loc);
+                            }
+                        });
+                        // اضافه کردن مکان‌هایی که در saved نیستند
+                        locationNames.forEach(loc => {
+                            if (!merged.includes(loc)) {
+                                merged.push(loc);
+                            }
+                        });
+                        if (merged.length > 0) {
+                            locationNames = merged;
+                            return true;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not load location order:', e);
+            }
+            return false;
         }
 
         // ============================================================
@@ -1162,6 +1299,12 @@ function updateLocationNamesFromBills() {
 
         function renderTabs() {
             const container = document.getElementById('locationTabs');
+            
+            // حذف Sortable قبلی
+            if (container._sortable) {
+                container._sortable.destroy();
+            }
+            
             container.innerHTML = '';
             
             if (locationNames.length === 0) {
@@ -1172,9 +1315,16 @@ function updateLocationNamesFromBills() {
                 currentLocation = locationNames[0];
             }
             
-            locationNames.forEach(loc => {
+            locationNames.forEach((loc, index) => {
                 const div = document.createElement('div');
                 div.className = 'location-item';
+                div.dataset.index = index;
+                div.dataset.location = loc;
+                
+                const dragHandle = document.createElement('span');
+                dragHandle.className = 'drag-handle';
+                dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
+                dragHandle.title = 'برای جابجایی بکشید';
                 
                 const btn = document.createElement('button');
                 btn.className = `location-btn ${loc === currentLocation ? 'active' : ''}`;
@@ -1186,11 +1336,11 @@ function updateLocationNamesFromBills() {
                     renderTable();
                 });
                 
+                div.appendChild(dragHandle);
                 div.appendChild(btn);
                 container.appendChild(div);
             });
 
-            // دکمه مدیریت مکان‌ها
             const manageBtn = document.createElement('button');
             manageBtn.className = 'manage-locations-btn';
             manageBtn.innerHTML = '<i class="fas fa-cog"></i> مدیریت مکان‌ها';
@@ -1200,6 +1350,40 @@ function updateLocationNamesFromBills() {
                 document.getElementById('newLocationInputManage').focus();
             });
             container.appendChild(manageBtn);
+
+            // راه‌اندازی Sortable
+            setupSortable(container);
+        }
+
+        function setupSortable(container) {
+            const sortable = new Sortable(container, {
+                handle: '.drag-handle',
+                animation: 150,
+                easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                dragClass: 'dragging',
+                delay: 100,
+                delayOnTouchOnly: true,
+                onEnd: function(evt) {
+                    const oldIndex = evt.oldIndex;
+                    const newIndex = evt.newIndex;
+                    
+                    if (oldIndex === newIndex) return;
+                    
+                    const movedItem = locationNames.splice(oldIndex, 1)[0];
+                    locationNames.splice(newIndex, 0, movedItem);
+                    
+                    saveLocationOrder();
+                    
+                    renderTabs();
+                    renderTable();
+                    
+                    showToast('ترتیب مکان‌ها با موفقیت تغییر یافت');
+                }
+            });
+            
+            container._sortable = sortable;
         }
 
         function renderLocationManagement() {
@@ -1232,7 +1416,6 @@ function updateLocationNamesFromBills() {
                 container.appendChild(div);
             });
 
-            // رویدادهای ویرایش
             container.querySelectorAll('.loc-edit-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const oldName = this.dataset.location;
@@ -1243,7 +1426,6 @@ function updateLocationNamesFromBills() {
                 });
             });
 
-            // رویدادهای حذف
             container.querySelectorAll('.loc-delete-btn').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const locationName = this.dataset.location;
@@ -1582,6 +1764,7 @@ function updateLocationNamesFromBills() {
             setupReport();
             setupExport();
             await loadBills();
+            
             renderTabs();
             renderTable();
         }
